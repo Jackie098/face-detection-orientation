@@ -1,0 +1,27 @@
+html {
+  height: 100vh;
+}
+
+body {
+  height: 100%
+}
+
+canvas {
+  max-width: 400px;
+}
+
+#inputImage {
+  margin: 20px auto;
+}
+
+#distance {
+  text-align: center;
+  font-size: 20px;
+  margin-top: 10px;
+}
+
+#orientation {
+  text-align: center;
+  font-size: 20px;
+  margin-top: 10px;
+}

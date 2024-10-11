@@ -10,22 +10,6 @@ import cv from "@techstark/opencv-js";
 
 let faceLandmarker: FaceLandmarker | null = null;
 
-async function loadFaceLandmarker() {
-  const filesetResolver = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-  );
-
-  faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
-    baseOptions: {
-      modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-      delegate: "GPU",
-    },
-    outputFaceBlendshapes: true,
-    runningMode: "IMAGE",
-    numFaces: 1,
-  });
-}
-
 // document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 //   <div>
 //     <a href="https://vitejs.dev" target="_blank">
@@ -45,7 +29,7 @@ async function loadFaceLandmarker() {
 // `;
 
 // setupCounter(document.querySelector<HTMLButtonElement>("#counter")!);
-
+// Image EXAMPLE
 const inputImageElement = document.getElementById("inputFile");
 const canvasElement = document.getElementById("output") as HTMLCanvasElement;
 const canvasCtx = canvasElement.getContext("2d");
@@ -63,6 +47,82 @@ async function loadImageToCanvas(file: File): Promise<HTMLImageElement> {
       resolve(img);
     };
   });
+}
+
+async function loadFaceLandmarker(runningMode: "IMAGE" | "VIDEO") {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+  );
+
+  faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+      delegate: "GPU",
+    },
+    outputFaceBlendshapes: true,
+    runningMode: runningMode,
+    numFaces: 1,
+  });
+}
+
+function drawLandmarksToCanvas(
+  faceLandmarks: NormalizedLandmark[][],
+  drawingUtils: DrawingUtils
+) {
+  for (const landmarks of faceLandmarks) {
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_TESSELATION,
+      { color: "#C0C0C070", lineWidth: 1 }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
+      { color: "#FF3030" }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,
+      { color: "#FF3030" }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
+      { color: "#30FF30" }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,
+      { color: "#30FF30" }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
+      { color: "#E0E0E0" }
+    );
+    drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, {
+      color: "#E0E0E0",
+    });
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,
+      { color: "#FF3030" }
+    );
+    drawingUtils.drawConnectors(
+      landmarks,
+      FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,
+      { color: "#30FF30" }
+    );
+  }
+}
+
+function calculateHeadDepth(faceLandmarks: NormalizedLandmark[][]) {
+  const nose = faceLandmarks[0][1];
+
+  // Calcular a distância aproximada com base no valor z
+  const zDistance = Math.abs(nose.z * 100); // Multiplicado por 100 para uma escala aproximada
+
+  return { zDistance };
 }
 
 function calculateHeadOrientation(
@@ -337,91 +397,70 @@ function calculateHeadOrientation(
   return { yaw, pitch, roll };
 }
 
+function displayOrientationResultMessage(
+  yaw: number,
+  pitch: number,
+  roll: number
+) {
+  //  @ts-ignore
+  const msgRoll =
+    "roll: " +
+    (180.0 * (roll / Math.PI)).toFixed(2) +
+    ` - ${
+      //  @ts-ignore
+      (180.0 * (roll / Math.PI)).toFixed(2) < 10 &&
+      //  @ts-ignore
+      (180.0 * (roll / Math.PI)).toFixed(2) > -10
+        ? "de frente"
+        : "rolando"
+    }`;
+  const msgPitch =
+    "pitch: " +
+    (180.0 * (pitch / Math.PI)).toFixed(2) +
+    ` - ${
+      //  @ts-ignore
+      (180.0 * (pitch / Math.PI)).toFixed(2) > -170 &&
+      //  @ts-ignore
+      (180.0 * (pitch / Math.PI)).toFixed(2) < -149
+        ? "de frente"
+        : "pra cima ou baixo"
+    }`;
+  const msgYaw =
+    "yaw: " +
+    (180.0 * (yaw / Math.PI)).toFixed(2) +
+    ` - ${
+      //  @ts-ignore
+      (180.0 * (yaw / Math.PI)).toFixed(2) > -3 &&
+      //  @ts-ignore
+      (180.0 * (yaw / Math.PI)).toFixed(2) < 3
+        ? "de frente"
+        : "para o lado"
+    }`;
+
+  return { msgRoll, msgPitch, msgYaw };
+}
+
 inputImageElement?.addEventListener("change", async (event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
-  let dst = new cv.Mat();
-  console.log("🚀 ~ inputImageElement?.addEventListener ~ dst:", dst);
 
   if (file) {
     const img = await loadImageToCanvas(file);
-    await loadFaceLandmarker();
+    await loadFaceLandmarker("IMAGE");
 
     const faceLandmarkerResult = await faceLandmarker!.detect(img);
-    console.log(
-      "🚀 ~ inputImageElement?.addEventListener ~ faceLandmarkerResult:",
-      faceLandmarkerResult
-    );
 
     const drawingUtils = new DrawingUtils(canvasCtx!);
+    drawLandmarksToCanvas(faceLandmarkerResult.faceLandmarks, drawingUtils);
 
-    for (const landmarks of faceLandmarkerResult.faceLandmarks) {
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_TESSELATION,
-        { color: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
-        { color: "#FF3030" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,
-        { color: "#FF3030" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
-        { color: "#30FF30" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,
-        { color: "#30FF30" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
-        { color: "#E0E0E0" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LIPS,
-        {
-          color: "#E0E0E0",
-        }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,
-        { color: "#FF3030" }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,
-        { color: "#30FF30" }
-      );
-    }
-
-    const nose = faceLandmarkerResult.faceLandmarks[0][1];
-
-    // Calcular a distância aproximada com base no valor z
-    const zDistance = Math.abs(nose.z * 100); // Multiplicado por 100 para uma escala aproximada
-
-    // Exibir a distância estimada
+    const { zDistance } = calculateHeadDepth(
+      faceLandmarkerResult.faceLandmarks
+    );
     // @ts-ignore
     document.getElementById(
       "distance"
     ).innerText = `Distância estimada do nariz: ${zDistance.toFixed(2)} in z`;
 
     const landmarks = faceLandmarkerResult.faceLandmarks[0];
-    console.log(
-      "🚀 ~ inputImageElement?.addEventListener ~ landmarks:",
-      landmarks
-    );
-
-    // Cálculo dos valores de yaw, pitch e roll
     // @ts-ignore
     const { yaw, pitch, roll } = calculateHeadOrientation(landmarks, {
       width: img.width,
@@ -463,40 +502,11 @@ inputImageElement?.addEventListener("change", async (event) => {
       (180.0 * (yaw / Math.PI)).toFixed(2)
     );
 
-    //  @ts-ignore
-    const msgRoll =
-      "roll: " +
-      (180.0 * (roll / Math.PI)).toFixed(2) +
-      ` - ${
-        //  @ts-ignore
-        (180.0 * (roll / Math.PI)).toFixed(2) < 10 &&
-        //  @ts-ignore
-        (180.0 * (roll / Math.PI)).toFixed(2) > -10
-          ? "de frente"
-          : "rolando"
-      }`;
-    const msgPitch =
-      "pitch: " +
-      (180.0 * (pitch / Math.PI)).toFixed(2) +
-      ` - ${
-        //  @ts-ignore
-        (180.0 * (pitch / Math.PI)).toFixed(2) > -170 &&
-        //  @ts-ignore
-        (180.0 * (pitch / Math.PI)).toFixed(2) < -149
-          ? "de frente"
-          : "pra cima ou baixo"
-      }`;
-    const msgYaw =
-      "yaw: " +
-      (180.0 * (yaw / Math.PI)).toFixed(2) +
-      ` - ${
-        //  @ts-ignore
-        (180.0 * (yaw / Math.PI)).toFixed(2) > -3 &&
-        //  @ts-ignore
-        (180.0 * (yaw / Math.PI)).toFixed(2) < 3
-          ? "de frente"
-          : "para o lado"
-      }`;
+    const { msgRoll, msgPitch, msgYaw } = displayOrientationResultMessage(
+      yaw,
+      pitch,
+      roll
+    );
 
     document.getElementById(
       "orientation"

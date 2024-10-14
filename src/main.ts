@@ -3,12 +3,17 @@ import "./style.css";
 import {
   DrawingUtils,
   FaceLandmarker,
+  FaceLandmarkerResult,
   FilesetResolver,
   NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 import cv from "@techstark/opencv-js";
 
 let faceLandmarker: FaceLandmarker | null = null;
+let runningMode: "IMAGE" | "VIDEO" = "IMAGE";
+let enableWebcamButton: HTMLButtonElement;
+let webcamRunning: Boolean = false;
+const videoWidth = 480;
 
 // document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 //   <div>
@@ -29,10 +34,19 @@ let faceLandmarker: FaceLandmarker | null = null;
 // `;
 
 // setupCounter(document.querySelector<HTMLButtonElement>("#counter")!);
-// Image EXAMPLE
+
 const inputImageElement = document.getElementById("inputFile");
-const canvasElement = document.getElementById("output") as HTMLCanvasElement;
-const canvasCtx = canvasElement.getContext("2d");
+const canvasImageElement = document.getElementById(
+  "output"
+) as HTMLCanvasElement;
+const canvasImageCtx = canvasImageElement.getContext("2d");
+
+const videoEl = document.getElementById("webcam") as HTMLVideoElement;
+console.log("🚀 ~ videoEl:", videoEl);
+const canvasVideoElement = document.getElementById(
+  "output_canvas"
+) as HTMLCanvasElement;
+const canvasVideoCtx = canvasVideoElement.getContext("2d");
 
 async function loadImageToCanvas(file: File): Promise<HTMLImageElement> {
   const img = new Image();
@@ -41,15 +55,15 @@ async function loadImageToCanvas(file: File): Promise<HTMLImageElement> {
 
   return new Promise((resolve) => {
     img.onload = () => {
-      canvasElement.width = img.width;
-      canvasElement.height = img.height;
-      canvasCtx!.drawImage(img, 0, 0);
+      canvasImageElement.width = img.width;
+      canvasImageElement.height = img.height;
+      canvasImageCtx!.drawImage(img, 0, 0);
       resolve(img);
     };
   });
 }
 
-async function loadFaceLandmarker(runningMode: "IMAGE" | "VIDEO") {
+async function loadFaceLandmarker() {
   const filesetResolver = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
   );
@@ -60,10 +74,11 @@ async function loadFaceLandmarker(runningMode: "IMAGE" | "VIDEO") {
       delegate: "GPU",
     },
     outputFaceBlendshapes: true,
-    runningMode: runningMode,
+    runningMode,
     numFaces: 1,
   });
 }
+await loadFaceLandmarker();
 
 function drawLandmarksToCanvas(
   faceLandmarks: NormalizedLandmark[][],
@@ -125,14 +140,10 @@ function calculateHeadDepth(faceLandmarks: NormalizedLandmark[][]) {
   return { zDistance };
 }
 
-function calculateHeadOrientation(
+async function calculateHeadOrientation(
   landmarks: NormalizedLandmark[],
   { width, height }: { width: number; height: number }
-): {
-  yaw: number;
-  pitch: number;
-  roll: number;
-} {
+): Promise<{ yaw: number; pitch: number; roll: number }> {
   const noseTip = landmarks[1]; // Landmarks para a ponta do nariz
   const rightEye = landmarks[33]; // Landmarks para o olho direito
   const leftEye = landmarks[263]; // Landmarks para o olho esquerdo
@@ -231,6 +242,7 @@ function calculateHeadOrientation(
     console.log("🚀 ~ numRows:", numRows);
     console.log("🚀 ~ face2d:", face2d);
     const imagePoints = cv.matFromArray(numRows, 2, cv.CV_64FC1, face2d);
+    console.log("🚀 ~ imagePoints:", imagePoints);
 
     var modelPointsObj = cv.matFromArray(6, 3, cv.CV_64FC1, pointsObj);
     console.log("🚀 ~ modelPointsObj:", modelPointsObj);
@@ -245,6 +257,7 @@ function calculateHeadOrientation(
       false, //  uses the provided rvec and tvec values as initial approximations
       cv.SOLVEPNP_ITERATIVE //SOLVEPNP_EPNP //SOLVEPNP_ITERATIVE (default but pose seems unstable)
     );
+    console.log("🚀 ~ success:", success);
 
     if (success) {
       var rmat = cv.Mat.zeros(3, 3, cv.CV_64FC1);
@@ -331,8 +344,8 @@ function calculateHeadOrientation(
 
       // canvasCtx.lineWidth = 5;
 
-      var scaleX = canvasElement.width / width;
-      var scaleY = canvasElement.height / height;
+      var scaleX = canvasImageElement.width / width;
+      var scaleY = canvasImageElement.height / height;
 
       // canvasCtx.strokeStyle = "red";
       // canvasCtx.beginPath();
@@ -402,14 +415,14 @@ function displayOrientationResultMessage(
   pitch: number,
   roll: number
 ) {
-  //  @ts-ignore
+  //
   const msgRoll =
     "roll: " +
     (180.0 * (roll / Math.PI)).toFixed(2) +
     ` - ${
-      //  @ts-ignore
+      //
       (180.0 * (roll / Math.PI)).toFixed(2) < 10 &&
-      //  @ts-ignore
+      //
       (180.0 * (roll / Math.PI)).toFixed(2) > -10
         ? "de frente"
         : "rolando"
@@ -418,9 +431,9 @@ function displayOrientationResultMessage(
     "pitch: " +
     (180.0 * (pitch / Math.PI)).toFixed(2) +
     ` - ${
-      //  @ts-ignore
+      //
       (180.0 * (pitch / Math.PI)).toFixed(2) > -170 &&
-      //  @ts-ignore
+      //
       (180.0 * (pitch / Math.PI)).toFixed(2) < -149
         ? "de frente"
         : "pra cima ou baixo"
@@ -429,9 +442,9 @@ function displayOrientationResultMessage(
     "yaw: " +
     (180.0 * (yaw / Math.PI)).toFixed(2) +
     ` - ${
-      //  @ts-ignore
+      //
       (180.0 * (yaw / Math.PI)).toFixed(2) > -3 &&
-      //  @ts-ignore
+      //
       (180.0 * (yaw / Math.PI)).toFixed(2) < 3
         ? "de frente"
         : "para o lado"
@@ -440,60 +453,33 @@ function displayOrientationResultMessage(
   return { msgRoll, msgPitch, msgYaw };
 }
 
+// Image EXAMPLE
 inputImageElement?.addEventListener("change", async (event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
 
   if (file) {
     const img = await loadImageToCanvas(file);
-    await loadFaceLandmarker("IMAGE");
+    // await loadFaceLandmarker();
 
     const faceLandmarkerResult = await faceLandmarker!.detect(img);
 
-    const drawingUtils = new DrawingUtils(canvasCtx!);
+    const drawingUtils = new DrawingUtils(canvasImageCtx!);
     drawLandmarksToCanvas(faceLandmarkerResult.faceLandmarks, drawingUtils);
 
     const { zDistance } = calculateHeadDepth(
       faceLandmarkerResult.faceLandmarks
     );
-    // @ts-ignore
+
     document.getElementById(
       "distance"
     ).innerText = `Distância estimada do nariz: ${zDistance.toFixed(2)} in z`;
 
     const landmarks = faceLandmarkerResult.faceLandmarks[0];
-    // @ts-ignore
-    const { yaw, pitch, roll } = calculateHeadOrientation(landmarks, {
+    //
+    const { yaw, pitch, roll } = await calculateHeadOrientation(landmarks, {
       width: img.width,
       height: img.height,
     });
-
-    // canvasCtx.fillStyle = "black";
-    // canvasCtx.font = "bold 30px Arial";
-    // canvasCtx.fillText(
-    //   "roll: " + (180.0 * (roll / Math.PI)).toFixed(2) + ` - ${(180.0 * (roll / Math.PI)).toFixed(2) < 10 && (180.0 * (roll / Math.PI)).toFixed(2) > -10 ? "de frente" : "rolando"}`,
-    //   //"roll: " + roll.toFixed(2),
-    //   width * 0.8,
-    //   50
-    // );
-    // canvasCtx.fillText(
-    //   "pitch: " + (180.0 * (pitch / Math.PI)).toFixed(2) + ` - ${(180.0 * (pitch / Math.PI)).toFixed(2) > -170 && (180.0 * (pitch / Math.PI)).toFixed(2) < -149 ? "de frente" : "pra cima ou baixo"}`,
-    //   //"pitch: " + pitch.toFixed(2),
-    //   width * 0.8,
-    //   100
-    // );
-    // canvasCtx.fillText(
-    //   "yaw: " +
-    //     (180.0 * (yaw / Math.PI)).toFixed(2) +
-    //     ` - ${
-    //       (180.0 * (yaw / Math.PI)).toFixed(2) > -3 &&
-    //       (180.0 * (yaw / Math.PI)).toFixed(2) < 3
-    //         ? "de frente"
-    //         : "para o lado"
-    //     }`,
-    //   //"yaw: " + yaw.toFixed(3),
-    //   width * 0.8,
-    //   150
-    // );
 
     console.log(
       "pose %f %f %f",
@@ -513,3 +499,125 @@ inputImageElement?.addEventListener("change", async (event) => {
     )!.innerText = `Orientação do rosto: ${msgRoll} | ${msgPitch} | ${msgYaw}`;
   }
 });
+
+// Video EXAMPLE
+// Check if webcam access is supported.
+function hasGetUserMedia() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+// If webcam supported, add event listener to button for when user
+// wants to activate it.
+let faceLandmarkerResult: FaceLandmarkerResult | undefined = undefined;
+if (hasGetUserMedia()) {
+  enableWebcamButton = document.getElementById(
+    "webcamButton"
+  ) as HTMLButtonElement;
+  enableWebcamButton.addEventListener("click", enableCam);
+} else {
+  console.warn("getUserMedia() is not supported by your browser");
+}
+
+// Enable the live webcam view and start detection.
+function enableCam(event: MouseEvent) {
+  if (!faceLandmarker) {
+    console.log("Wait! faceLandmarker not loaded yet.");
+    return;
+  }
+
+  if (webcamRunning === true) {
+    webcamRunning = false;
+    enableWebcamButton.innerText = "ENABLE PREDICTIONS";
+  } else {
+    webcamRunning = true;
+    enableWebcamButton.innerText = "DISABLE PREDICTIONS";
+  }
+
+  // getUsermedia parameters.
+  const constraints: MediaStreamConstraints = {
+    video: true,
+  };
+
+  // Activate the webcam stream.
+  navigator.mediaDevices.getUserMedia(constraints).then(async (stream) => {
+    console.log("🚀 ~ navigator.mediaDevices.getUserMedia ~ stream:", stream);
+    videoEl.srcObject = stream;
+    videoEl.addEventListener("loadeddata", predictWebcam);
+
+    // const landmarks = faceLandmarkerResult!.faceLandmarks[0];
+    // const { yaw, pitch, roll } = await calculateHeadOrientation(landmarks, {
+    //   width: videoEl.width,
+    //   height: videoEl.height,
+    // });
+    // console.log("🚀 ~ predictWebcam ~ yaw, pitch, roll:", yaw, pitch, roll);
+
+    // const { msgRoll, msgPitch, msgYaw } = displayOrientationResultMessage(
+    //   yaw,
+    //   pitch,
+    //   roll
+    // );
+
+    // document.getElementById(
+    //   "orientation"
+    // )!.innerText = `Orientação do rosto: ${msgRoll} | ${msgPitch} | ${msgYaw}`;
+  });
+}
+
+let lastVideoTime = -1;
+const drawingUtils = new DrawingUtils(canvasVideoCtx!);
+async function predictWebcam() {
+  const radio = videoEl.videoHeight / videoEl.videoWidth;
+  videoEl.style.width = videoWidth + "px";
+  videoEl.style.height = videoWidth * radio + "px";
+  canvasVideoElement.style.width = videoWidth + "px";
+  canvasVideoElement.style.height = videoWidth * radio + "px";
+  canvasVideoElement.width = videoEl.videoWidth;
+  canvasVideoElement.height = videoEl.videoHeight;
+
+  // Now let's start detecting the stream.
+  if (runningMode === "IMAGE") {
+    runningMode = "VIDEO";
+    await faceLandmarker!.setOptions({ runningMode: runningMode });
+  }
+
+  let startTimeMs = performance.now();
+  if (lastVideoTime !== videoEl.currentTime) {
+    lastVideoTime = videoEl.currentTime;
+    faceLandmarkerResult = faceLandmarker!.detectForVideo(videoEl, startTimeMs);
+  }
+
+  if (faceLandmarkerResult) {
+    drawLandmarksToCanvas(faceLandmarkerResult.faceLandmarks, drawingUtils);
+
+    const { zDistance } = calculateHeadDepth(
+      faceLandmarkerResult.faceLandmarks
+    );
+
+    document.getElementById(
+      "distance"
+    ).innerText = `Distância estimada do nariz: ${zDistance.toFixed(2)} in z`;
+
+    const landmarks = faceLandmarkerResult.faceLandmarks[0];
+    console.log("🚀 ~ predictWebcam ~ landmarks:", landmarks[0]);
+    // const { yaw, pitch, roll } = await calculateHeadOrientation(landmarks, {
+    //   width: videoEl.width,
+    //   height: videoEl.height,
+    // });
+    // console.log("🚀 ~ predictWebcam ~ yaw, pitch, roll:", yaw, pitch, roll);
+
+    // const { msgRoll, msgPitch, msgYaw } = displayOrientationResultMessage(
+    //   yaw,
+    //   pitch,
+    //   roll
+    // );
+
+    // document.getElementById(
+    //   "orientation"
+    // )!.innerText = `Orientação do rosto: ${msgRoll} | ${msgPitch} | ${msgYaw}`;
+  }
+
+  // Call this function again to keep predicting when the browser is ready.
+  if (webcamRunning === true) {
+    window.requestAnimationFrame(predictWebcam);
+  }
+}

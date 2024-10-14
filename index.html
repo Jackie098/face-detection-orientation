@@ -8,13 +8,23 @@
     <!-- <script src="./opencv.js" type="text/javascript"></script> -->
   </head>
   <body>
-    <!-- <div id="app"></div> -->
     <input type="file" id="inputFile" accept="image/*">
     <p id="distance">Distância estimada do nariz: -- z</p>
     <p id="orientation">Orientação do rosto: --</p>
-    
-    <canvas id="output" />
-    <!-- <script src="https://docs.opencv.org/master/opencv.js"></script> -->
+    <canvas id="output"></canvas>
+
+    <!-- class="videoView" -->
+    <div id="liveView" >
+      <button id="webcamButton" class="">
+        <span class=""></span>
+        <span class="">ENABLE WEBCAM</span>
+      </button>
+      <div style="position: relative;">
+        <video id="webcam" style="position: abso" autoplay playsinline></video>
+        <canvas class="output_canvas" id="output_canvas" style="position: absolute; left: 0px; top: 0px;"></canvas>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

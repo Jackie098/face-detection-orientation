@@ -140,10 +140,10 @@ function calculateHeadDepth(faceLandmarks: NormalizedLandmark[][]) {
   return { zDistance };
 }
 
-async function calculateHeadOrientation(
+function calculateHeadOrientation(
   landmarks: NormalizedLandmark[],
   { width, height }: { width: number; height: number }
-): Promise<{ yaw: number; pitch: number; roll: number }> {
+): { yaw: number; pitch: number; roll: number } {
   const noseTip = landmarks[1]; // Landmarks para a ponta do nariz
   const rightEye = landmarks[33]; // Landmarks para o olho direito
   const leftEye = landmarks[263]; // Landmarks para o olho esquerdo
@@ -586,7 +586,11 @@ async function predictWebcam() {
     faceLandmarkerResult = faceLandmarker!.detectForVideo(videoEl, startTimeMs);
   }
 
-  if (faceLandmarkerResult) {
+  if (faceLandmarkerResult && faceLandmarkerResult?.faceLandmarks.length > 0) {
+    console.log(
+      "🚀 ~ predictWebcam ~ faceLandmarkerResult:",
+      faceLandmarkerResult
+    );
     drawLandmarksToCanvas(faceLandmarkerResult.faceLandmarks, drawingUtils);
 
     const { zDistance } = calculateHeadDepth(
@@ -599,25 +603,34 @@ async function predictWebcam() {
 
     const landmarks = faceLandmarkerResult.faceLandmarks[0];
     console.log("🚀 ~ predictWebcam ~ landmarks:", landmarks[0]);
-    // const { yaw, pitch, roll } = await calculateHeadOrientation(landmarks, {
-    //   width: videoEl.width,
-    //   height: videoEl.height,
-    // });
-    // console.log("🚀 ~ predictWebcam ~ yaw, pitch, roll:", yaw, pitch, roll);
+    if (!cv) {
+      console.warn("OpenCV não está carregado.");
+      return;
+    }
 
-    // const { msgRoll, msgPitch, msgYaw } = displayOrientationResultMessage(
-    //   yaw,
-    //   pitch,
-    //   roll
-    // );
+    try {
+      const { yaw, pitch, roll } = calculateHeadOrientation(landmarks, {
+        width: videoEl.width,
+        height: videoEl.height,
+      });
+      const { msgRoll, msgPitch, msgYaw } = displayOrientationResultMessage(
+        yaw,
+        pitch,
+        roll
+      );
 
-    // document.getElementById(
-    //   "orientation"
-    // )!.innerText = `Orientação do rosto: ${msgRoll} | ${msgPitch} | ${msgYaw}`;
+      document.getElementById(
+        "orientation"
+      )!.innerText = `Orientação do rosto: ${msgRoll} | ${msgPitch} | ${msgYaw}`;
+
+      console.log("🚀 ~ predictWebcam ~ yaw, pitch, roll:", yaw, pitch, roll);
+    } catch (error) {
+      console.log("🚀 ~ predictWebcam ~ error:", error);
+    }
   }
 
-  // Call this function again to keep predicting when the browser is ready.
   if (webcamRunning === true) {
-    window.requestAnimationFrame(predictWebcam);
+    window.requestAnimationFrame(() => setTimeout(predictWebcam, 50));
   }
+  // Call this function again to keep predicting when the browser is ready.
 }
